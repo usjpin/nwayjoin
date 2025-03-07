@@ -2,28 +2,36 @@ package usjpin.flink;
 
 import lombok.*;
 
-import java.util.Map;
 import java.util.HashMap;
+import java.util.Map;
 
 @Data
-@SuperBuilder
+@Builder
 public class JoinerConfig {
-    @Builder.Default
-    private Map<String, StreamConfig<?>> streamConfigs = new HashMap<>();
+    private Map<String, StreamConfig<?>> streamConfigs;
     private long stateRetentionMs;
 
-    public static class JoinerConfigBuilder<C extends JoinerConfig, B extends JoinerConfigBuilder<C, B>> extends JoinerConfigBuilderImpl<C, B> {
-        public <T> B addStream(StreamConfig<T> streamConfig) {
-            if (this.streamConfigs$value == null) {
-                this.streamConfigs$value = new HashMap<>();
-            }
-            this.streamConfigs$value.put(streamConfig.getName(), streamConfig);
-            return self();
+    public JoinerConfig(Map<String, StreamConfig<?>> streamConfigs, long stateRetentionMs) {
+        this.streamConfigs = streamConfigs;
+        this.stateRetentionMs = stateRetentionMs;
+    }
+
+    public static class Builder {
+        private long stateRetentionMs;
+        private final Map<String, StreamConfig<?>> streamConfigs = new HashMap<>();
+
+        public <T> Builder addStream(StreamConfig<T> streamConfig) {
+            this.streamConfigs.put(streamConfig.getName(), streamConfig);
+            return this;
         }
 
-        public B withStateRetention(long stateRetentionMs) {
-            this.stateRetentionMs(stateRetentionMs);
-            return self();
+        public Builder withStateRetention(long stateRetentionMs) {
+            this.stateRetentionMs = stateRetentionMs;
+            return this;
+        }
+
+        public JoinerConfig build() {
+            return new JoinerConfig(this.streamConfigs, this.stateRetentionMs);
         }
     }
 }
