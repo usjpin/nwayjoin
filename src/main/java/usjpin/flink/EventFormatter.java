@@ -16,6 +16,7 @@ public class EventFormatter<T> extends KeyedProcessFunction<String, T, JoinableE
     public void processElement(T event, KeyedProcessFunction<String, T, JoinableEvent<T>>.Context context, Collector<JoinableEvent<T>> collector) {
         collector.collect(
             JoinableEvent.<T>builder()
+                    .streamName(streamConfig.getName())
                     .event(event)
                     .joinKey(streamConfig.getJoinKeyExtractor().apply(event))
                     .timestamp(context.timestamp())
