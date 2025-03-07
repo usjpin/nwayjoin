@@ -3,6 +3,7 @@ package usjpin.flink;
 import org.apache.flink.api.common.state.*;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
@@ -15,8 +16,11 @@ import java.util.List;
 import java.util.Map;
 
 class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT> {
+    private final long CLEANUP_INTERVAL_MS = 60_000L;
+
     private final JoinerConfig<OUT> joinerConfig;
     private transient ValueState<Map<String, List<JoinableEvent<?>>>> joinState;
+    private transient ValueState<Long> lastCleanupTimestamp;
 
     public NWayJoiner(JoinerConfig<OUT> joinerConfig) {
         this.joinerConfig = joinerConfig;
@@ -29,7 +33,7 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
                         "joinState",
                         TypeInformation.of(new TypeHint<Map<String, List<JoinableEvent<?>>>>() {})
                 );
-
+        
         StateTtlConfig stateTtlConfig = StateTtlConfig.newBuilder(Duration.ofMillis(joinerConfig.getStateRetentionMs()))
                 .setUpdateType(StateTtlConfig.UpdateType.OnCreateAndWrite)
                 .setStateVisibility(StateTtlConfig.StateVisibility.NeverReturnExpired)
@@ -38,6 +42,10 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
         joinStateDescriptor.enableTimeToLive(stateTtlConfig);
 
         joinState = getRuntimeContext().getState(joinStateDescriptor);
+
+        lastCleanupTimestamp = getRuntimeContext().getState(
+                new ValueStateDescriptor<>("lastCleanupTimestamp", Types.LONG));
+        lastCleanupTimestamp.update(System.currentTimeMillis());
     }
 
     @Override
@@ -50,17 +58,25 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
         }
 
         Map<String, List<JoinableEvent<?>>> state = joinState.value();
-        if (!state.containsKey(joinableEvent.getStreamName())) {
-            state.put(joinableEvent.getStreamName(), new ArrayList<>());
-        }
-
-        state.get(joinableEvent.getStreamName()).add(joinableEvent);
+        state.computeIfAbsent(joinableEvent.getStreamName(), k -> new ArrayList<>())
+                .add(joinableEvent);
         joinState.update(state);
 
-        attemptInnerJoin(collector);
+        if (joinerConfig.getJoinTimeoutMs() == 0) {
+            attemptInnerJoin(context.timestamp(), collector);
+        } else {
+            context.timerService().registerProcessingTimeTimer(
+                context.timerService().currentProcessingTime() + joinerConfig.getJoinTimeoutMs()
+            );
+        }
     }
 
-    private void attemptInnerJoin(Collector<OUT> collector) throws Exception {
+    @Override
+    public void onTimer(long timestamp, OnTimerContext ctx, Collector<OUT> out) throws Exception {
+        attemptInnerJoin(timestamp, out);
+    }
+
+    private void attemptInnerJoin(long timestamp, Collector<OUT> collector) throws Exception {
         Map<String, List<JoinableEvent<?>>> state = joinState.value();
         OUT result = joinerConfig.getJoinLogic().apply(state);
         if (result == null) {
@@ -68,7 +84,21 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
         }
 
         collector.collect(result);
-        joinState.clear();
+
+        if (timestamp > lastCleanupTimestamp.value() + CLEANUP_INTERVAL_MS) {
+            for (String streamName : state.keySet()) {
+                List<JoinableEvent<?>> events = state.get(streamName);
+                events.removeIf(event -> event.getTimestamp() < timestamp - joinerConfig.getStateRetentionMs());
+                if (events.isEmpty()) {
+                    state.remove(streamName);
+                } else {
+                    state.put(streamName, events);
+                }
+            }
+
+            joinState.update(state);
+            lastCleanupTimestamp.update(timestamp);
+        }
     }
 
     public static <OUT> DataStream<OUT> create(JoinerConfig<OUT> joinerConfig) {
