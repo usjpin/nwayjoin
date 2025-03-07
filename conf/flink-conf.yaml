@@ -1,0 +1,12 @@
+rest.address: localhost
+rest.port: 8081
+jobmanager.rpc.address: localhost
+
+execution.checkpointing.enabled: true
+execution.checkpointing.interval: 5000
+
+state.checkpoints.dir: file:///Users/kudo/Desktop/nwayjoin/checkpoints
+state.savepoints.dir: file:///Users/kudo/Desktop/nwayjoin/savepoints
+
+taskmanager.numberOfTaskSlots: 1
+taskmanager.numberOfTaskManagers: 1
