@@ -13,6 +13,7 @@ public class StreamConfig<T> implements Serializable {
     private transient DataStream<T> stream;
     private Class<T> classType;
     private SerializableFunction<T, String> joinKeyExtractor;
+    // TODO: have seperation of event & processing time based join
 
     private StreamConfig(String name, DataStream<T> stream, Class<T> classType, SerializableFunction<T, String> joinKeyExtractor) {
         this.name = name;

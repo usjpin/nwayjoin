@@ -1,8 +1,11 @@
 build:
 	mvn package
 
-run:
-	FLINK_CONF_DIR=./conf flink run target/NWayJoiner-1.0-SNAPSHOT.jar 
+run1:
+	FLINK_CONF_DIR=./conf flink run target/IntegerJoiner.jar
+
+run2:
+	FLINK_CONF_DIR=./conf flink run target/PurchaseAttributionJoiner.jar
 
 clean:
 	mvn clean

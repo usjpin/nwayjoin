@@ -6,7 +6,6 @@ import java.util.*;
 
 @Getter
 public class JoinerState {
-  // TODO: change sorting function to compare by timestamp
   private final Map<String, SortedSet<JoinableEvent<?>>> state;
 
   public JoinerState() {
