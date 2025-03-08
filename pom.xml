@@ -121,14 +121,72 @@ under the License.
 				</configuration>
 			</plugin>
 
-			<!-- We use the maven-shade plugin to create a fat jar that contains all necessary dependencies. -->
-			<!-- Change the value of <mainClass>...</mainClass> if your program entry point changes. -->
+			<!-- Create library JAR -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<version>3.2.0</version>
+				<configuration>
+					<includes>
+						<include>usjpin/flink/**</include>
+					</includes>
+					<excludes>
+						<exclude>usjpin/flink/examples/**</exclude>
+					</excludes>
+				</configuration>
+			</plugin>
+
+			<!-- Generate sources jar -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-source-plugin</artifactId>
+				<version>3.2.1</version>
+				<executions>
+					<execution>
+						<id>attach-sources</id>
+						<goals>
+							<goal>jar</goal>
+						</goals>
+						<configuration>
+							<includes>
+								<include>usjpin/flink/**</include>
+							</includes>
+							<excludes>
+								<exclude>usjpin/flink/examples/**</exclude>
+							</excludes>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			
+
+			<!-- Generate javadoc jar -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-javadoc-plugin</artifactId>
+				<version>3.2.0</version>
+				<executions>
+					<execution>
+						<id>attach-javadocs</id>
+						<goals>
+							<goal>jar</goal>
+						</goals>
+						<configuration>
+							<sourcepath>${project.basedir}/src/main/java</sourcepath>
+							<subpackages>usjpin.flink</subpackages>
+							<excludePackageNames>usjpin.flink.examples</excludePackageNames>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- We use the maven-shade plugin to create fat JARs for examples -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-shade-plugin</artifactId>
 				<version>3.1.1</version>
 				<executions>
-					<!-- Run shade goal on package phase -->
+					<!-- IntegerJoiner example -->
 					<execution>
 						<id>IntegerJoiner</id>
 						<phase>package</phase>
@@ -166,7 +224,8 @@ under the License.
 							</transformers>
 						</configuration>
 					</execution>
-
+					
+					<!-- PurchaseAttributionJoiner example -->
 					<execution>
 						<id>PurchaseAttributionJoiner</id>
 						<phase>package</phase>
