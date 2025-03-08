@@ -9,13 +9,13 @@ import java.util.function.Function;
 @Builder
 public class JoinerConfig<OUT> {
     private Map<String, StreamConfig<?>> streamConfigs;
-    private Function<Map<String, List<JoinableEvent<?>>>, OUT> joinLogic;
+    private Function<JoinerState, OUT> joinLogic;
     private long stateRetentionMs;
     private long joinTimeoutMs;
 
     public JoinerConfig(
             Map<String, StreamConfig<?>> streamConfigs,
-            Function<Map<String, List<JoinableEvent<?>>>, OUT> joinLogic,
+            Function<JoinerState, OUT> joinLogic,
             long stateRetentionMs,
             long joinTimeoutMs) {
         this.streamConfigs = streamConfigs;
@@ -26,7 +26,7 @@ public class JoinerConfig<OUT> {
 
     public static class Builder<OUT> {
         private long stateRetentionMs;
-        private Function<Map<String, List<JoinableEvent<?>>>, OUT> joinLogic;
+        private Function<JoinerState, OUT> joinLogic;
         private final Map<String, StreamConfig<?>> streamConfigs = new HashMap<>();
         private long joinTimeoutMs;
 
@@ -35,7 +35,7 @@ public class JoinerConfig<OUT> {
             return this;
         }
 
-        public Builder<OUT> withJoinLogic(Function<Map<String, List<JoinableEvent<?>>>, OUT> joinLogic) {
+        public Builder<OUT> withJoinLogic(Function<JoinerState, OUT> joinLogic) {
             this.joinLogic = joinLogic;
             return this;
         }

@@ -19,7 +19,7 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
     private final long CLEANUP_INTERVAL_MS = 60_000L;
 
     private final JoinerConfig<OUT> joinerConfig;
-    private transient ValueState<Map<String, List<JoinableEvent<?>>>> joinState;
+    private transient ValueState<JoinerState> joinState;
     private transient ValueState<Long> lastCleanupTimestamp;
 
     public NWayJoiner(JoinerConfig<OUT> joinerConfig) {
@@ -28,12 +28,12 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
 
     @Override
     public void open(Configuration parameters) throws Exception {
-        ValueStateDescriptor<Map<String, List<JoinableEvent<?>>>> joinStateDescriptor =
+        ValueStateDescriptor<JoinerState> joinStateDescriptor =
                 new ValueStateDescriptor<>(
                         "joinState",
-                        TypeInformation.of(new TypeHint<Map<String, List<JoinableEvent<?>>>>() {})
+                        TypeInformation.of(new TypeHint<JoinerState>() {})
                 );
-        
+
         StateTtlConfig stateTtlConfig = StateTtlConfig.newBuilder(Duration.ofMillis(joinerConfig.getStateRetentionMs()))
                 .setUpdateType(StateTtlConfig.UpdateType.OnCreateAndWrite)
                 .setStateVisibility(StateTtlConfig.StateVisibility.NeverReturnExpired)
@@ -45,7 +45,7 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
 
         lastCleanupTimestamp = getRuntimeContext().getState(
                 new ValueStateDescriptor<>("lastCleanupTimestamp", Types.LONG));
-        lastCleanupTimestamp.update(System.currentTimeMillis());
+        lastCleanupTimestamp.update(0L);
     }
 
     @Override
@@ -54,12 +54,11 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
             KeyedProcessFunction<String, JoinableEvent<?>, OUT>.Context context,
             Collector<OUT> collector) throws Exception {
         if (joinState.value() == null) {
-            joinState.update(new HashMap<>());
+            joinState.update(new JoinerState());
         }
 
-        Map<String, List<JoinableEvent<?>>> state = joinState.value();
-        state.computeIfAbsent(joinableEvent.getStreamName(), k -> new ArrayList<>())
-                .add(joinableEvent);
+        JoinerState state = joinState.value();
+        state.addEvent(joinableEvent);
         joinState.update(state);
 
         if (joinerConfig.getJoinTimeoutMs() == 0) {
@@ -77,7 +76,8 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
     }
 
     private void attemptInnerJoin(long timestamp, Collector<OUT> collector) throws Exception {
-        Map<String, List<JoinableEvent<?>>> state = joinState.value();
+        JoinerState state = joinState.value();
+        state.removeEventsOlderThan(timestamp - joinerConfig.getStateRetentionMs());
         OUT result = joinerConfig.getJoinLogic().apply(state);
         if (result == null) {
             return;
@@ -86,16 +86,7 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
         collector.collect(result);
 
         if (timestamp > lastCleanupTimestamp.value() + CLEANUP_INTERVAL_MS) {
-            for (String streamName : state.keySet()) {
-                List<JoinableEvent<?>> events = state.get(streamName);
-                events.removeIf(event -> event.getTimestamp() < timestamp - joinerConfig.getStateRetentionMs());
-                if (events.isEmpty()) {
-                    state.remove(streamName);
-                } else {
-                    state.put(streamName, events);
-                }
-            }
-
+            state.removeEventsOlderThan(timestamp - joinerConfig.getStateRetentionMs());
             joinState.update(state);
             lastCleanupTimestamp.update(timestamp);
         }

@@ -19,7 +19,7 @@ public class EventFormatter<T> extends KeyedProcessFunction<String, T, JoinableE
                     .streamName(streamConfig.getName())
                     .event(event)
                     .joinKey(streamConfig.getJoinKeyExtractor().apply(event))
-                    .timestamp(context.timestamp())
+                    .timestamp(context.timerService().currentProcessingTime())
                     .build()
         );
     }
