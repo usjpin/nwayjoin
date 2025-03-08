@@ -1,54 +1,50 @@
 package usjpin.flink;
 
-import jdk.nashorn.internal.objects.annotations.Constructor;
 import lombok.*;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.util.function.SerializableFunction;
 
-import java.util.function.Function;
+import java.io.Serializable;
 
 @Data
 @Builder
-public class StreamConfig<T> {
+public class StreamConfig<T> implements Serializable {
     private String name;
-    private DataStream<T> stream;
+    private transient DataStream<T> stream;
     private Class<T> classType;
-    private Function<T, String> partitionKeyExtractor;
-    private Function<T, String> joinKeyExtractor;
+    private SerializableFunction<T, String> joinKeyExtractor;
 
-    public StreamConfig(String name, DataStream<T> stream, Class<T> classType, Function<T, String> partitionKeyExtractor, Function<T, String> joinKeyExtractor) {
+    private StreamConfig(String name, DataStream<T> stream, Class<T> classType, SerializableFunction<T, String> joinKeyExtractor) {
         this.name = name;
         this.stream = stream;
         this.classType = classType;
-        this.partitionKeyExtractor = partitionKeyExtractor;
         this.joinKeyExtractor = joinKeyExtractor;
     }
 
-    public static class Builder<T> {
-        private String name;
-        private Function<T, String> partitionKeyExtractor;
-        private Function<T, String> joinKeyExtractor;
-        private DataStream<T> stream;
-        private Class<T> classType;
+    public static <OUT> StreamConfig.Builder<OUT> builder() {
+        return new StreamConfig.Builder<>();
+    }
 
-        public Builder<T> withStream(String name, DataStream<T> stream, Class<T> classType) {
+    public static class Builder<OUT> {
+        private String name;
+        private DataStream<OUT> stream;
+        private Class<OUT> classType;
+        private SerializableFunction<OUT, String> joinKeyExtractor;
+
+        public Builder<OUT> withStream(String name, DataStream<OUT> stream, Class<OUT> classType) {
             this.name = name;
             this.stream = stream;
             this.classType = classType;
             return this;
         }
 
-        public Builder<T> withPartitionKeyExtractor(Function<T, String> partitionKeyExtractor) {
-            this.partitionKeyExtractor = partitionKeyExtractor;
-            return this;
-        }
-
-        public Builder<T> withJoinKeyExtractor(Function<T, String> joinKeyExtractor) {
+        public Builder<OUT> joinKeyExtractor(SerializableFunction<OUT, String> joinKeyExtractor) {
             this.joinKeyExtractor = joinKeyExtractor;
             return this;
         }
 
-        public StreamConfig<T> build() {
-            return new StreamConfig<T>(this.name, this.stream, this.classType, this.partitionKeyExtractor, this.joinKeyExtractor);
+        public StreamConfig<OUT> build() {
+            return new StreamConfig<OUT>(this.name, this.stream, this.classType, this.joinKeyExtractor);
         }
     }
 }

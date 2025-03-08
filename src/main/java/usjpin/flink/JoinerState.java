@@ -1,18 +1,20 @@
 package usjpin.flink;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
+import lombok.Getter;
 
+import java.util.*;
+
+@Getter
 public class JoinerState {
-  private final Map<String, Set<JoinableEvent<?>>> state;
+  // TODO: change sorting function to compare by timestamp
+  private final Map<String, SortedSet<JoinableEvent<?>>> state;
 
   public JoinerState() {
     this.state = new HashMap<>();
   }
 
   public void addEvent(JoinableEvent<?> event) {
+
     state.computeIfAbsent(event.getStreamName(), k -> new TreeSet<>()).add(event);
   }
   

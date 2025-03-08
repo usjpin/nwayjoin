@@ -20,6 +20,13 @@ package usjpin.flink.examples;
 
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.util.function.SerializableFunction;
+import usjpin.flink.*;
+
+import java.util.Map;
+import java.util.Set;
+import java.util.SortedSet;
+
 /**
  * Skeleton for a Flink DataStream Job.
  *
@@ -39,9 +46,45 @@ public class DataStreamJob {
 		// to building Flink applications.
 		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-		DataStream<Integer> dataStream = env.addSource(new InfiniteSource(100));
+		DataStream<Integer> dataStream1 = env.addSource(new InfiniteSource(100));
+		DataStream<Integer> dataStream2 = env.addSource(new InfiniteSource(100));
 
-		dataStream.rebalance().filter(value -> value % 2 == 0).print();
+		SerializableFunction<Integer, String> joinKeyExtractor = Object::toString;
+
+		StreamConfig<Integer> streamConfig1 = StreamConfig.<Integer>builder()
+				.withStream("stream1", dataStream1, Integer.class)
+				.joinKeyExtractor(joinKeyExtractor)
+				.build();
+
+		StreamConfig<Integer> streamConfig2 = StreamConfig.<Integer>builder()
+				.withStream("stream2", dataStream2, Integer.class)
+				.joinKeyExtractor(joinKeyExtractor)
+				.build();
+
+		JoinerConfig<Integer> joinerConfig = JoinerConfig.<Integer>builder()
+				.addStreamConfig(streamConfig1)
+				.addStreamConfig(streamConfig2)
+				.outClass(Integer.class)
+				.stateRetentionMs(3600*1000L)
+				.joinLogic(
+						joinerState -> {
+							Map<String, SortedSet<JoinableEvent<?>>> state = joinerState.getState();
+
+							if (state.size() != 2) {
+								return null;
+							}
+
+							Integer stream1Val = (Integer)state.get("stream1").iterator().next().getEvent();
+							Integer stream2Val = (Integer)state.get("stream2").iterator().next().getEvent();
+
+							return stream1Val + stream2Val;
+						}
+				)
+				.build();
+
+		DataStream<Integer> joinedStream = NWayJoiner.create(joinerConfig);
+
+		joinedStream.print();
 		
 		// Execute program, beginning computation.
 		env.execute("NWayJoiner Example");

@@ -1,21 +1,19 @@
 package usjpin.flink;
 
+import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.state.*;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.api.java.typeutils.ResultTypeQueryable;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.util.Collector;
 
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
-class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT> {
+public class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT> {
     private final long CLEANUP_INTERVAL_MS = 60_000L;
 
     private final JoinerConfig<OUT> joinerConfig;
@@ -45,7 +43,6 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
 
         lastCleanupTimestamp = getRuntimeContext().getState(
                 new ValueStateDescriptor<>("lastCleanupTimestamp", Types.LONG));
-        lastCleanupTimestamp.update(0L);
     }
 
     @Override
@@ -53,6 +50,10 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
             JoinableEvent<?> joinableEvent,
             KeyedProcessFunction<String, JoinableEvent<?>, OUT>.Context context,
             Collector<OUT> collector) throws Exception {
+        if (lastCleanupTimestamp.value() == null) {
+            lastCleanupTimestamp.update(0L);
+        }
+    
         if (joinState.value() == null) {
             joinState.update(new JoinerState());
         }
@@ -62,7 +63,7 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
         joinState.update(state);
 
         if (joinerConfig.getJoinTimeoutMs() == 0) {
-            attemptInnerJoin(context.timestamp(), collector);
+            attemptInnerJoin(context.timerService().currentProcessingTime(), collector);
         } else {
             context.timerService().registerProcessingTimeTimer(
                 context.timerService().currentProcessingTime() + joinerConfig.getJoinTimeoutMs()
@@ -96,8 +97,7 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
         DataStream<JoinableEvent<?>> formattedStreams = null;
 
         for (StreamConfig<?> config : joinerConfig.getStreamConfigs().values()) {
-            DataStream<JoinableEvent<?>> currentStream = EventFormatter.format(config)
-                    .map(event -> (JoinableEvent<?>) event);
+            DataStream<JoinableEvent<?>> currentStream = EventFormatter.format(config);
             if (formattedStreams == null) {
                 formattedStreams = currentStream;
             } else {
@@ -111,6 +111,7 @@ class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT
 
         return formattedStreams
                 .keyBy(JoinableEvent::getJoinKey)
-                .process(new NWayJoiner<>(joinerConfig));
+                .process(new NWayJoiner<>(joinerConfig))
+                .returns(TypeInformation.of(joinerConfig.getOutClass()));
     }
 }
