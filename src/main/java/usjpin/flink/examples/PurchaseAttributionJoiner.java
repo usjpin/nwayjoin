@@ -69,6 +69,7 @@ public class PurchaseAttributionJoiner {
                 .addStreamConfig(purchaseStreamConfig)
                 .outClass(AttributionResult.class)
                 .stateRetentionMs(thirtyMinutesMs)
+                .cleanupIntervalMs(300_000L) // Set to 5 minutes
                 .joinLogic(new PurchaseAttributionLogic())
                 .build();
 

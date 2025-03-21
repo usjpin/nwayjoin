@@ -14,8 +14,6 @@ import org.apache.flink.util.Collector;
 import java.time.Duration;
 
 public class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<?>, OUT> {
-    private final long CLEANUP_INTERVAL_MS = 60_000L;
-
     private final JoinerConfig<OUT> joinerConfig;
     private transient ValueState<JoinerState> joinState;
     private transient ValueState<Long> lastCleanupTimestamp;
@@ -94,7 +92,8 @@ public class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<
             joinState.update(this.context.getState());
         }
 
-        if (timestamp > lastCleanupTimestamp.value() + CLEANUP_INTERVAL_MS) {
+        // Use the configurable cleanup interval
+        if (timestamp > lastCleanupTimestamp.value() + joinerConfig.getCleanupIntervalMs()) {
             state.removeEventsOlderThan(timestamp - joinerConfig.getStateRetentionMs());
             joinState.update(state);
             lastCleanupTimestamp.update(timestamp);

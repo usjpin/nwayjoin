@@ -13,18 +13,21 @@ public class JoinerConfig<OUT> implements Serializable {
     private final JoinLogic<OUT> joinLogic;
     private final long stateRetentionMs;
     private final long joinTimeoutMs;
+    private final long cleanupIntervalMs;
 
     private JoinerConfig(
             Map<String, StreamConfig<?>> streamConfigs,
             Class<OUT> outClass,
             JoinLogic<OUT> joinLogic,
             long stateRetentionMs,
-            long joinTimeoutMs) {
+            long joinTimeoutMs,
+            long cleanupIntervalMs) {
         this.streamConfigs = streamConfigs;
         this.outClass = outClass;
         this.joinLogic = joinLogic;
         this.stateRetentionMs = stateRetentionMs;
         this.joinTimeoutMs = joinTimeoutMs;
+        this.cleanupIntervalMs = cleanupIntervalMs;
     }
 
     public static <OUT> Builder<OUT> builder() {
@@ -37,6 +40,7 @@ public class JoinerConfig<OUT> implements Serializable {
         private JoinLogic<OUT> joinLogic;
         private long stateRetentionMs = 60_000L;
         private long joinTimeoutMs = 0L;
+        private long cleanupIntervalMs = 60_000L; // Default to 1 minute
 
         public Builder<OUT> addStreamConfig(StreamConfig<?> streamConfig) {
             this.streamConfigs.put(streamConfig.getName(), streamConfig);
@@ -68,6 +72,14 @@ public class JoinerConfig<OUT> implements Serializable {
             this.joinTimeoutMs = joinTimeoutMs;
             return this;
         }
+        
+        public Builder<OUT> cleanupIntervalMs(long cleanupIntervalMs) {
+            if (cleanupIntervalMs <= 0) {
+                throw new IllegalArgumentException("Cleanup interval must be positive");
+            }
+            this.cleanupIntervalMs = cleanupIntervalMs;
+            return this;
+        }
 
         public JoinerConfig<OUT> build() {
             if (streamConfigs.isEmpty()) {
@@ -79,7 +91,7 @@ public class JoinerConfig<OUT> implements Serializable {
             if (outClass == null) {
                 throw new IllegalStateException("Output class must be provided");
             }
-            return new JoinerConfig<>(streamConfigs, outClass, joinLogic, stateRetentionMs, joinTimeoutMs);
+            return new JoinerConfig<>(streamConfigs, outClass, joinLogic, stateRetentionMs, joinTimeoutMs, cleanupIntervalMs);
         }
     }
 }

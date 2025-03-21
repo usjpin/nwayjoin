@@ -72,6 +72,7 @@ public class IntegerJoiner {
 				.addStreamConfig(streamConfig3)
 				.outClass(Integer.class)
 				.stateRetentionMs(3600*1000L)
+				.cleanupIntervalMs(120_000L)
 				.joinLogic(new IntegerSumJoinLogic())
 				.build();
 
