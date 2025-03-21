@@ -144,16 +144,15 @@ public class PurchaseAttributionJoiner {
 
         @Override
         public String toString() {
-            return "Purchase{userId='" + userId + "', productId='" + productId + 
-                   "', timestamp=" + timestamp + ", amount=" + amount + "}";
+            return "Purchase{userId='" + userId + "', productId='" + productId + "', timestamp=" + timestamp + ", amount=" + amount + "}";
         }
     }
 
     public static class AttributionResult {
         private final String clickUserId;
         private final String purchaseUserId;
-        private final String clickedProductId;
-        private final String purchasedProductId;
+        private final String clickProductId;
+        private final String purchaseProductId;
         private final long clickTimestamp;
         private final long purchaseTimestamp;
         private final double purchaseAmount;
@@ -161,15 +160,15 @@ public class PurchaseAttributionJoiner {
         public AttributionResult(
                 String clickUserId,
                 String purchaseUserId,
-                String clickedProductId,
-                String purchasedProductId,
+                String clickProductId,
+                String purchaseProductId,
                 long clickTimestamp,
                 long purchaseTimestamp,
                 double purchaseAmount) {
             this.clickUserId = clickUserId;
             this.purchaseUserId = purchaseUserId;
-            this.clickedProductId = clickedProductId;
-            this.purchasedProductId = purchasedProductId;
+            this.clickProductId = clickProductId;
+            this.purchaseProductId = purchaseProductId;
             this.clickTimestamp = clickTimestamp;
             this.purchaseTimestamp = purchaseTimestamp;
             this.purchaseAmount = purchaseAmount;
@@ -177,65 +176,72 @@ public class PurchaseAttributionJoiner {
 
         @Override
         public String toString() {
-            return "Attribution{clickUserId='" + clickUserId +
-                   "', purchaseUserId='" + purchaseUserId +
-                   "', clickedProduct='" + clickedProductId + 
-                   "', purchasedProduct='" + purchasedProductId + 
-                   "', clickTime=" + Instant.ofEpochMilli(clickTimestamp) + 
-                   ", purchaseTime=" + Instant.ofEpochMilli(purchaseTimestamp) + 
-                   ", timeDiff=" + (purchaseTimestamp - clickTimestamp) / 1000 + "s" +
-                   ", amount=" + purchaseAmount + "}";
+            return "Attribution{" +
+                    "clickUser='" + clickUserId + '\'' +
+                    ", purchaseUser='" + purchaseUserId + '\'' +
+                    ", clickProduct='" + clickProductId + '\'' +
+                    ", purchaseProduct='" + purchaseProductId + '\'' +
+                    ", clickTime=" + Instant.ofEpochMilli(clickTimestamp) +
+                    ", purchaseTime=" + Instant.ofEpochMilli(purchaseTimestamp) +
+                    ", amount=" + purchaseAmount +
+                    '}';
         }
     }
 
-    // Source implementations to generate test data
-    public static class ClickEventSource implements SourceFunction<ClickEvent> {
+    static class ClickEventSource implements SourceFunction<ClickEvent> {
         private boolean running = true;
         private final Random random = new Random();
-        private final String[] userIds = {"user1", "user2", "user3", "user4", "user5"};
-        private final String[] productIds = {"product1", "product2", "product3", "product4", "product5"};
-
+        
         @Override
         public void run(SourceContext<ClickEvent> ctx) throws Exception {
-            while (running) {
+            String[] userIds = {"user1", "user2", "user3", "user4", "user5"};
+            String[] productIds = {"product1", "product2", "product3", "product4", "product5"};
+            
+            int count = 0;
+            while (running && count < 100) {
                 String userId = userIds[random.nextInt(userIds.length)];
                 String productId = productIds[random.nextInt(productIds.length)];
                 long timestamp = System.currentTimeMillis();
-
+                
                 ctx.collect(new ClickEvent(userId, productId, timestamp));
-
-                // Sleep between 500ms and 3s
-                Thread.sleep(500 + random.nextInt(2500));
+                
+                Thread.sleep(500);
+                count++;
             }
         }
-
+        
         @Override
         public void cancel() {
             running = false;
         }
     }
-
-    public static class PurchaseEventSource implements SourceFunction<PurchaseEvent> {
+    
+    static class PurchaseEventSource implements SourceFunction<PurchaseEvent> {
         private boolean running = true;
         private final Random random = new Random();
-        private final String[] userIds = {"user1", "user2", "user3", "user4", "user5"};
-        private final String[] productIds = {"product1", "product2", "product3", "product4", "product5"};
-
+        
         @Override
         public void run(SourceContext<PurchaseEvent> ctx) throws Exception {
-            while (running) {
+            String[] userIds = {"user1", "user2", "user3", "user4", "user5"};
+            String[] productIds = {"product1", "product2", "product3", "product4", "product5"};
+            
+            // Start after a delay to allow some clicks to happen first
+            Thread.sleep(2000);
+            
+            int count = 0;
+            while (running && count < 100) {
                 String userId = userIds[random.nextInt(userIds.length)];
                 String productId = productIds[random.nextInt(productIds.length)];
                 long timestamp = System.currentTimeMillis();
-                double amount = 10.0 + random.nextDouble() * 90.0; // Random amount between 10 and 100
-
+                double amount = 10.0 + random.nextDouble() * 90.0;
+                
                 ctx.collect(new PurchaseEvent(userId, productId, timestamp, amount));
-
-                // Sleep between 2s and 8s (purchases happen less frequently than clicks)
-                Thread.sleep(2000 + random.nextInt(6000));
+                
+                Thread.sleep(1000);
+                count++;
             }
         }
-
+        
         @Override
         public void cancel() {
             running = false;
@@ -244,56 +250,61 @@ public class PurchaseAttributionJoiner {
 
     static class PurchaseAttributionLogic implements JoinLogic<AttributionResult> {
         @Override
-        public AttributionResult apply(JoinerState joinerState) {
-            Map<String, SortedSet<JoinableEvent<?>>> state = joinerState.getState();
+        public void apply(NWayJoinerContext<AttributionResult> context) {
+            JoinerState state = context.getState();
+            Map<String, NavigableSet<JoinableEvent<?>>> stateMap = state.getState();
 
             // Check if we have both clicks and purchases for this user
-            if (!state.containsKey("clicks") || !state.containsKey("purchases")) {
-                return null;
+            if (!stateMap.containsKey("clicks") || !stateMap.containsKey("purchases")) {
+                return;
             }
 
-            SortedSet<JoinableEvent<?>> clickEvents = state.get("clicks");
-            SortedSet<JoinableEvent<?>> purchaseEvents = state.get("purchases");
+            NavigableSet<JoinableEvent<?>> clickEvents = stateMap.get("clicks");
+            NavigableSet<JoinableEvent<?>> purchaseEvents = stateMap.get("purchases");
+            
+            if (purchaseEvents.isEmpty()) {
+                return;
+            }
 
-            // Get the latest purchase
-            JoinableEvent<?> latestPurchaseEvent = purchaseEvents.last();
-            PurchaseEvent purchase = (PurchaseEvent) latestPurchaseEvent.getEvent();
-            long purchaseTimestamp = latestPurchaseEvent.getTimestamp();
-
-            // Find the most recent click that happened before the purchase
-            JoinableEvent<?> attributedClickEvent = null;
-            ClickEvent attributedClick = null;
-            long clickTimestamp = 0;
-
-            for (JoinableEvent<?> clickEvent : clickEvents) {
-                if (clickEvent.getTimestamp() < purchaseTimestamp) {
-                    ClickEvent click = (ClickEvent) clickEvent.getEvent();
-                    if (attributedClick == null || clickEvent.getTimestamp() > clickTimestamp) {
-                        attributedClickEvent = clickEvent;
-                        attributedClick = click;
-                        clickTimestamp = clickEvent.getTimestamp();
-                    }
+            // Process each purchase event
+            Iterator<JoinableEvent<?>> purchaseIterator = purchaseEvents.iterator();
+            while (purchaseIterator.hasNext()) {
+                JoinableEvent<?> purchaseEvent = purchaseIterator.next();
+                PurchaseEvent purchase = (PurchaseEvent) purchaseEvent.getEvent();
+                long purchaseTimestamp = purchaseEvent.getTimestamp();
+                
+                // Find the most recent click before this purchase
+                JoinableEvent<?> attributedClickEvent = state.getMostRecentEventBefore("clicks", purchaseTimestamp);
+                
+                if (attributedClickEvent != null) {
+                    ClickEvent attributedClick = (ClickEvent) attributedClickEvent.getEvent();
+                    
+                    // Create attribution result
+                    AttributionResult result = new AttributionResult(
+                            attributedClick.getUserId(),
+                            purchase.getUserId(),
+                            attributedClick.getProductId(),
+                            purchase.getProductId(),
+                            attributedClick.getTimestamp(),
+                            purchase.getTimestamp(),
+                            purchase.getAmount()
+                    );
+                    
+                    // Emit the result
+                    context.emit(result);
+                    
+                    // Remove the processed events
+                    clickEvents.remove(attributedClickEvent);
+                    purchaseIterator.remove();
                 }
             }
-
-            // If we found a click that happened before the purchase, create an attribution result
-            if (attributedClick != null) {
-                // Clean up the attributed click & purchase event
-                clickEvents.remove(attributedClickEvent);
-                purchaseEvents.remove(latestPurchaseEvent);
-
-                return new AttributionResult(
-                        attributedClick.getUserId(),
-                        purchase.getUserId(),
-                        attributedClick.getProductId(),
-                        purchase.getProductId(),
-                        attributedClick.getTimestamp(),
-                        purchase.getTimestamp(),
-                        purchase.getAmount()
-                );
-            }
-
-            return null;
+            
+            // Clean up empty sets
+            if (clickEvents.isEmpty()) stateMap.remove("clicks");
+            if (purchaseEvents.isEmpty()) stateMap.remove("purchases");
+            
+            // Update the state
+            context.updateState(state);
         }
     }
 }

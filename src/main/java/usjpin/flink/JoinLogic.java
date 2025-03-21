@@ -11,10 +11,10 @@ import java.io.Serializable;
 public interface JoinLogic<OUT> extends Serializable {
     
     /**
-     * Applies the join logic to the current joiner state.
+     * Applies the join logic using the provided context.
+     * The implementation can access state, emit results, and get timestamps through the context.
      *
-     * @param state The current state containing events from all streams
-     * @return The joined result, or null if no join should be emitted
+     * @param context The joiner context providing access to state and output operations
      */
-    OUT apply(JoinerState state);
+    void apply(NWayJoinerContext<OUT> context);
 }

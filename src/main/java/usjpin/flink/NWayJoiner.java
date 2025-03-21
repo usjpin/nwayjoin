@@ -19,6 +19,7 @@ public class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<
     private final JoinerConfig<OUT> joinerConfig;
     private transient ValueState<JoinerState> joinState;
     private transient ValueState<Long> lastCleanupTimestamp;
+    private transient ContextImpl context;
 
     public NWayJoiner(JoinerConfig<OUT> joinerConfig) {
         this.joinerConfig = joinerConfig;
@@ -43,6 +44,8 @@ public class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<
 
         lastCleanupTimestamp = getRuntimeContext().getState(
                 new ValueStateDescriptor<>("lastCleanupTimestamp", Types.LONG));
+                
+        context = new ContextImpl();
     }
 
     @Override
@@ -63,7 +66,7 @@ public class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<
         joinState.update(state);
 
         if (joinerConfig.getJoinTimeoutMs() == 0) {
-            attemptInnerJoin(context.timerService().currentProcessingTime(), collector);
+            applyJoinLogic(context.timerService().currentProcessingTime(), collector);
         } else {
             context.timerService().registerProcessingTimeTimer(
                 context.timerService().currentProcessingTime() + joinerConfig.getJoinTimeoutMs()
@@ -73,18 +76,23 @@ public class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<
 
     @Override
     public void onTimer(long timestamp, OnTimerContext ctx, Collector<OUT> out) throws Exception {
-        attemptInnerJoin(timestamp, out);
+        applyJoinLogic(timestamp, out);
     }
 
-    private void attemptInnerJoin(long timestamp, Collector<OUT> collector) throws Exception {
+    private void applyJoinLogic(long timestamp, Collector<OUT> collector) throws Exception {
         JoinerState state = joinState.value();
         state.removeEventsOlderThan(timestamp - joinerConfig.getStateRetentionMs());
-        OUT result = joinerConfig.getJoinLogic().apply(state);
-        if (result == null) {
-            return;
+        
+        // Set up the context with current state and timestamp
+        this.context.setup(state, timestamp, collector);
+        
+        // Apply the join logic with the context
+        joinerConfig.getJoinLogic().apply(this.context);
+        
+        // Update state if it was modified by the join logic
+        if (this.context.isStateModified()) {
+            joinState.update(this.context.getState());
         }
-
-        collector.collect(result);
 
         if (timestamp > lastCleanupTimestamp.value() + CLEANUP_INTERVAL_MS) {
             state.removeEventsOlderThan(timestamp - joinerConfig.getStateRetentionMs());
@@ -113,5 +121,49 @@ public class NWayJoiner<OUT> extends KeyedProcessFunction<String, JoinableEvent<
                 .keyBy(JoinableEvent::getJoinKey)
                 .process(new NWayJoiner<>(joinerConfig))
                 .returns(TypeInformation.of(joinerConfig.getOutClass()));
+    }
+    
+    /**
+     * Implementation of the NWayJoinerContext interface.
+     */
+    private class ContextImpl implements NWayJoinerContext<OUT> {
+        private JoinerState state;
+        private long timestamp;
+        private Collector<OUT> collector;
+        private boolean stateModified = false;
+        
+        public void setup(JoinerState state, long timestamp, Collector<OUT> collector) {
+            this.state = state;
+            this.timestamp = timestamp;
+            this.collector = collector;
+            this.stateModified = false;
+        }
+        
+        @Override
+        public void updateState(JoinerState state) {
+            this.state = state;
+            this.stateModified = true;
+        }
+        
+        @Override
+        public void emit(OUT result) {
+            if (result != null) {
+                collector.collect(result);
+            }
+        }
+        
+        @Override
+        public JoinerState getState() {
+            return state;
+        }
+        
+        @Override
+        public long getCurrentTimestamp() {
+            return timestamp;
+        }
+        
+        public boolean isStateModified() {
+            return stateModified;
+        }
     }
 }
