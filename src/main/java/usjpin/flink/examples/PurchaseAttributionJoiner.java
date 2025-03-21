@@ -69,59 +69,7 @@ public class PurchaseAttributionJoiner {
                 .addStreamConfig(purchaseStreamConfig)
                 .outClass(AttributionResult.class)
                 .stateRetentionMs(thirtyMinutesMs)
-                .joinLogic(
-                        joinerState -> {
-                            Map<String, SortedSet<JoinableEvent<?>>> state = joinerState.getState();
-
-                            // Check if we have both clicks and purchases for this user
-                            if (!state.containsKey("clicks") || !state.containsKey("purchases")) {
-                                return null;
-                            }
-
-                            SortedSet<JoinableEvent<?>> clickEvents = state.get("clicks");
-                            SortedSet<JoinableEvent<?>> purchaseEvents = state.get("purchases");
-
-                            // Get the latest purchase
-                            JoinableEvent<?> latestPurchaseEvent = purchaseEvents.last();
-                            PurchaseEvent purchase = (PurchaseEvent) latestPurchaseEvent.getEvent();
-                            long purchaseTimestamp = latestPurchaseEvent.getTimestamp();
-
-                            // Find the most recent click that happened before the purchase
-                            JoinableEvent<?> attributedClickEvent = null;
-                            ClickEvent attributedClick = null;
-                            long clickTimestamp = 0;
-
-                            for (JoinableEvent<?> clickEvent : clickEvents) {
-                                if (clickEvent.getTimestamp() < purchaseTimestamp) {
-                                    ClickEvent click = (ClickEvent) clickEvent.getEvent();
-                                    if (attributedClick == null || clickEvent.getTimestamp() > clickTimestamp) {
-                                        attributedClickEvent = clickEvent;
-                                        attributedClick = click;
-                                        clickTimestamp = clickEvent.getTimestamp();
-                                    }
-                                }
-                            }
-
-                            // If we found a click that happened before the purchase, create an attribution result
-                            if (attributedClick != null) {
-                                // Clean up the attributed click & purchase event
-                                clickEvents.remove(attributedClickEvent);
-                                purchaseEvents.remove(latestPurchaseEvent);
-
-                                return new AttributionResult(
-                                        attributedClick.getUserId(),
-                                        purchase.getUserId(),
-                                        attributedClick.getProductId(),
-                                        purchase.getProductId(),
-                                        attributedClick.getTimestamp(),
-                                        purchase.getTimestamp(),
-                                        purchase.getAmount()
-                                );
-                            }
-
-                            return null;
-                        }
-                )
+                .joinLogic(new PurchaseAttributionLogic())
                 .build();
 
         // Create the joined stream
@@ -291,6 +239,61 @@ public class PurchaseAttributionJoiner {
         @Override
         public void cancel() {
             running = false;
+        }
+    }
+
+    static class PurchaseAttributionLogic implements JoinLogic<AttributionResult> {
+        @Override
+        public AttributionResult apply(JoinerState joinerState) {
+            Map<String, SortedSet<JoinableEvent<?>>> state = joinerState.getState();
+
+            // Check if we have both clicks and purchases for this user
+            if (!state.containsKey("clicks") || !state.containsKey("purchases")) {
+                return null;
+            }
+
+            SortedSet<JoinableEvent<?>> clickEvents = state.get("clicks");
+            SortedSet<JoinableEvent<?>> purchaseEvents = state.get("purchases");
+
+            // Get the latest purchase
+            JoinableEvent<?> latestPurchaseEvent = purchaseEvents.last();
+            PurchaseEvent purchase = (PurchaseEvent) latestPurchaseEvent.getEvent();
+            long purchaseTimestamp = latestPurchaseEvent.getTimestamp();
+
+            // Find the most recent click that happened before the purchase
+            JoinableEvent<?> attributedClickEvent = null;
+            ClickEvent attributedClick = null;
+            long clickTimestamp = 0;
+
+            for (JoinableEvent<?> clickEvent : clickEvents) {
+                if (clickEvent.getTimestamp() < purchaseTimestamp) {
+                    ClickEvent click = (ClickEvent) clickEvent.getEvent();
+                    if (attributedClick == null || clickEvent.getTimestamp() > clickTimestamp) {
+                        attributedClickEvent = clickEvent;
+                        attributedClick = click;
+                        clickTimestamp = clickEvent.getTimestamp();
+                    }
+                }
+            }
+
+            // If we found a click that happened before the purchase, create an attribution result
+            if (attributedClick != null) {
+                // Clean up the attributed click & purchase event
+                clickEvents.remove(attributedClickEvent);
+                purchaseEvents.remove(latestPurchaseEvent);
+
+                return new AttributionResult(
+                        attributedClick.getUserId(),
+                        purchase.getUserId(),
+                        attributedClick.getProductId(),
+                        purchase.getProductId(),
+                        attributedClick.getTimestamp(),
+                        purchase.getTimestamp(),
+                        purchase.getAmount()
+                );
+            }
+
+            return null;
         }
     }
 }

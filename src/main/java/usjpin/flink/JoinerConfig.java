@@ -1,7 +1,6 @@
 package usjpin.flink;
 
 import lombok.*;
-import org.apache.flink.util.function.SerializableFunction;
 
 import java.io.Serializable;
 import java.util.*;
@@ -11,14 +10,14 @@ import java.util.*;
 public class JoinerConfig<OUT> implements Serializable {
     private final Map<String, StreamConfig<?>> streamConfigs;
     private final Class<OUT> outClass;
-    private final SerializableFunction<JoinerState, OUT> joinLogic;
+    private final JoinLogic<OUT> joinLogic;
     private final long stateRetentionMs;
     private final long joinTimeoutMs;
 
     private JoinerConfig(
             Map<String, StreamConfig<?>> streamConfigs,
             Class<OUT> outClass,
-            SerializableFunction<JoinerState, OUT> joinLogic,
+            JoinLogic<OUT> joinLogic,
             long stateRetentionMs,
             long joinTimeoutMs) {
         this.streamConfigs = streamConfigs;
@@ -35,7 +34,7 @@ public class JoinerConfig<OUT> implements Serializable {
     public static class Builder<OUT> {
         private final Map<String, StreamConfig<?>> streamConfigs = new HashMap<>();
         private Class<OUT> outClass;
-        private SerializableFunction<JoinerState, OUT> joinLogic;
+        private JoinLogic<OUT> joinLogic;
         private long stateRetentionMs = 60_000L;
         private long joinTimeoutMs = 0L;
 
@@ -49,7 +48,7 @@ public class JoinerConfig<OUT> implements Serializable {
             return this;
         }
 
-        public Builder<OUT> joinLogic(SerializableFunction<JoinerState, OUT> joinLogic) {
+        public Builder<OUT> joinLogic(JoinLogic<OUT> joinLogic) {
             this.joinLogic = joinLogic;
             return this;
         }

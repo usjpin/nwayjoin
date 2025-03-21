@@ -74,21 +74,7 @@ public class IntegerJoiner {
 				.addStreamConfig(streamConfig3)
 				.outClass(Integer.class)
 				.stateRetentionMs(3600*1000L)
-				.joinLogic(
-						joinerState -> {
-							Map<String, SortedSet<JoinableEvent<?>>> state = joinerState.getState();
-
-							if (state.size() != 3) {
-								return null;
-							}
-
-							Integer stream1Val = (Integer)state.get("stream1").iterator().next().getEvent();
-							Integer stream2Val = (Integer)state.get("stream2").iterator().next().getEvent();
-							Integer stream3Val = (Integer)state.get("stream3").iterator().next().getEvent();
-
-							return stream1Val + stream2Val + stream3Val;
-						}
-				)
+				.joinLogic(new IntegerSumJoinLogic())
 				.build();
 
 		DataStream<Integer> joinedStream = NWayJoiner.create(joinerConfig);
@@ -120,6 +106,23 @@ public class IntegerJoiner {
 		@Override
 		public void cancel() {
 			isRunning = false;
+		}
+	}
+
+	static class IntegerSumJoinLogic implements JoinLogic<Integer> {
+		@Override
+		public Integer apply(JoinerState joinerState) {
+			Map<String, SortedSet<JoinableEvent<?>>> state = joinerState.getState();
+
+			if (state.size() != 3) {
+				return null;
+			}
+
+			Integer stream1Val = (Integer)state.get("stream1").iterator().next().getEvent();
+			Integer stream2Val = (Integer)state.get("stream2").iterator().next().getEvent();
+			Integer stream3Val = (Integer)state.get("stream3").iterator().next().getEvent();
+
+			return stream1Val + stream2Val + stream3Val;
 		}
 	}
 }
