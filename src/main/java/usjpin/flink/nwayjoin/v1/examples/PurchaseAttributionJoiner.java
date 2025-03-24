@@ -16,13 +16,13 @@
  * limitations under the License.
  */
 
-package usjpin.flink.examples;
+ package usjpin.flink.nwayjoin.v1.examples;
 
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
 import org.apache.flink.util.function.SerializableFunction;
-import usjpin.flink.*;
+import usjpin.flink.nwayjoin.v1.*;
 
 import java.util.*;
 import java.time.Instant;

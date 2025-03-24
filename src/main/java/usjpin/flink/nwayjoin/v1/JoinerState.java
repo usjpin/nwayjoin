@@ -1,4 +1,4 @@
-package usjpin.flink;
+package usjpin.flink.nwayjoin.v1;
 
 import lombok.Getter;
 

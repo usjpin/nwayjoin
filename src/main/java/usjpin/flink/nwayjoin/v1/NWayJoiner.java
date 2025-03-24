@@ -1,4 +1,4 @@
-package usjpin.flink;
+package usjpin.flink.nwayjoin.v1;
 
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.state.*;
